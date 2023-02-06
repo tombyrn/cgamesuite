@@ -12,6 +12,7 @@
 int height, width;
 struct termios orig_termios;
 char input = '#';
+int direction = 1;
 int running  = 1;
 int total = 0;
 
@@ -19,6 +20,7 @@ typedef struct scale{
     int x, y;
     int direction;
     int number;
+    char value;
     struct scale* next;
 } scale;
 
@@ -49,10 +51,6 @@ void sigint_handler(){
 }
 
 void move_scale(scale* scale){
-    if(scale->x < 1 || scale->x>=width-1 || scale->y < 1 || scale->y>=height-1){
-        running = 0;
-        return;
-    }
 
     switch (scale->direction){
         case 1:
@@ -71,8 +69,14 @@ void move_scale(scale* scale){
             break;
     }
 
+    // detect collision with wall
+    if(scale->x < 1 || scale->x>=width-1 || scale->y < 1 || scale->y>=height-1){
+        running = 0;
+        return;
+    }
+
+    // recurse if there is another scale
     if(scale->next != NULL){
-        
         move_scale(scale->next);
         scale->next->direction = scale->direction;
     }
@@ -80,30 +84,25 @@ void move_scale(scale* scale){
 
 void handle_input(scale* snake){
     size_t bytes_read = read(STDIN_FILENO, &input, 1);
+    
     if(bytes_read == 1){
         if(input == 'w' || input == 'W'){
-            snake->direction = 1;
+            direction = 1;
         }
         if(input == 'a' || input == 'A'){
-            snake->direction = 4;
+            direction = 4;
         }
         if(input == 's' || input == 'S'){
-            snake->direction = 3;
+            direction = 3;
         }
         if(input == 'd' || input == 'D'){
-            snake->direction = 2;
+            direction = 2;
         }
         if(input == 'Q'){
             running = 0;
         }
     }
-}
-
-void check_fruit(scale* snake, fruit* fruit){
-    if(fruit->x == snake->x && fruit->y == snake->y){
-        fruit->eaten = 1;
-        total++;
-    }
+    snake->direction = direction;
 }
 
 scale* create_new_scale(scale* head){
@@ -133,14 +132,23 @@ scale* create_new_scale(scale* head){
     }
 
     scale* new_scale = malloc(sizeof(scale));
-    new_scale->direction = s->direction;
 
-    new_scale->x = s->x;
+    new_scale->x = x;
     new_scale->y = y;
-    new_scale->next = NULL;
+    new_scale->direction = s->direction;
     new_scale->number = s->number+1;
+    new_scale->next = NULL;
+    new_scale->value = 'o';
     s->next = new_scale;
     return new_scale;
+}
+
+void check_fruit(scale* snake, fruit* fruit){
+    if(fruit->x == snake->x && fruit->y == snake->y){
+        fruit->eaten = 1;
+        total++;
+        create_new_scale(snake);
+    }
 }
 
 void init_board(char board[height][width] ){
@@ -155,7 +163,7 @@ void init_board(char board[height][width] ){
 }
 
 void draw_snake(scale* snake, char board[height][width]){
-    board[snake->y][snake->x] = SNAKE_CHAR;
+    board[snake->y][snake->x] = snake->value;
     if(snake->next != NULL)
         draw_snake(snake->next, board);
 }
@@ -177,6 +185,9 @@ void draw_board(char board[height][width] ){
     for(int i = 0; i < height; i++){
         for(int j = 0; j < width; j++){
             putchar(board[i][j]);
+        }
+        if(i == 0){
+            printf("\t Score:%d", total);
         }
         putchar('\n');
     }
@@ -219,9 +230,10 @@ int main(int argc, char* argv[]){
     scale snake;
     snake.x = width/2;
     snake.y = height/2;
-    snake.direction = 1;
+    snake.direction = direction;
     snake.next = NULL;
     snake.number = 0;
+    snake.value = 'Q';
     create_new_scale(&snake);
     create_new_scale(&snake);
     create_new_scale(&snake);
@@ -233,13 +245,13 @@ int main(int argc, char* argv[]){
     enable_raw_input();
     while(running){
         init_board(board); // resets the board, with just the boundaries
-        draw_snake(&snake, board); // adds all snake scales the the board
+        move_scale(&snake); // recursively move all scales in snake
+        draw_snake(&snake, board); // adds all snake scales the tiles in the board
         draw_fruit(&fruit, board); // adds fruit to random blank tile in board
         draw_board(board); // clear the screen and draw the entire board
         
-        handle_input(&snake);
-        move_scale(&snake);
-        check_fruit(&snake, &fruit);
+        handle_input(&snake); // read an input and change directions accordingly
+        check_fruit(&snake, &fruit); // check if snake head has collided with the fruit
         usleep(150000);
     }
     
