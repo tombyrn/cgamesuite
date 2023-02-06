@@ -140,7 +140,7 @@ int count_living_neighbors(cell* c, int i, int j){
     int count =  0;
     cell curr_cell = *c;
 
-    int* testn = NULL;
+    // int* testn = NULL;
 
     // count upper row of live neighbors
     if(curr_cell.tl && curr_cell.tl->alive)

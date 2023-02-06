@@ -1,4 +1,4 @@
-CC = clangs
+CC = clang
 CFLAGS  = -O3 -g -Wall -std=c17 
 
 TARGET = gameofwar
@@ -6,7 +6,7 @@ TARGET = gameofwar
 all: $(TARGET)
 
 $(TARGET): $(TARGET).c
-	$(CC) $(TARGET).c $(CFLAGS) -o $(TARGET) 
+	$(CC) $(TARGET).c $(CFLAGS) -o $(TARGET).out
 
 clean:
 	$(RM) $(TARGET)
