@@ -13,16 +13,16 @@ Current Library:
 To run:
 
     Navigate to the directory of the software you want to run
-    ```
-        cd ./$GAME
-    ```
+```
+    cd ./$GAME
+```
 
     Compile
-    ```
-        make
-    ```
+```
+    make
+```
 
     Run
-    ```
-        ./$GAME.out
-    ```
+```
+    ./$GAME.out
+```
