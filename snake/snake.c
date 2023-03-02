@@ -6,8 +6,11 @@
 
 #define SCALE_AMT 8000
 #define SNAKE_CHAR 'o'
+#define SNAKE_HEAD 'O'
 #define FRUIT_CHAR '@'
 #define RESET_SCREEN printf("\x1b[2J\x1b[H")
+#define ANSI_GREEN "\033[32;1m"
+#define ANSI_RESET "\033[0m"
 
 int height, width;
 struct termios orig_termios;
@@ -52,6 +55,11 @@ void sigint_handler(){
 
 void move_scale(scale* scale){
 
+    // detect collision with wall
+    if(scale->x < 1 || scale->x>=width-1 || scale->y < 1 || scale->y>=height-1){
+        running = 0;
+        return;
+    }
     switch (scale->direction){
         case 1:
             scale->y--;
@@ -69,11 +77,6 @@ void move_scale(scale* scale){
             break;
     }
 
-    // detect collision with wall
-    if(scale->x < 1 || scale->x>=width-1 || scale->y < 1 || scale->y>=height-1){
-        running = 0;
-        return;
-    }
 
     // recurse if there is another scale
     if(scale->next != NULL){
@@ -138,7 +141,7 @@ scale* create_new_scale(scale* head){
     new_scale->direction = s->direction;
     new_scale->number = s->number+1;
     new_scale->next = NULL;
-    new_scale->value = 'o';
+    new_scale->value = SNAKE_CHAR;
     s->next = new_scale;
     return new_scale;
 }
@@ -184,7 +187,11 @@ void draw_board(char board[height][width] ){
     board[0][0] = input;
     for(int i = 0; i < height; i++){
         for(int j = 0; j < width; j++){
+            if(board[i][j] == SNAKE_HEAD || board[i][j] == SNAKE_CHAR)
+                printf(ANSI_GREEN);
             putchar(board[i][j]);
+
+            printf(ANSI_RESET);
         }
         if(i == 0){
             printf("\t Score:%d", total);
@@ -233,10 +240,10 @@ int main(int argc, char* argv[]){
     snake.direction = direction;
     snake.next = NULL;
     snake.number = 0;
-    snake.value = 'Q';
-    create_new_scale(&snake);
-    create_new_scale(&snake);
-    create_new_scale(&snake);
+    snake.value = SNAKE_HEAD;
+    // create_new_scale(&snake);
+    // create_new_scale(&snake);
+    // create_new_scale(&snake);
 
     fruit fruit;
     fruit.eaten = 1;
@@ -245,12 +252,12 @@ int main(int argc, char* argv[]){
     enable_raw_input();
     while(running){
         init_board(board); // resets the board, with just the boundaries
-        move_scale(&snake); // recursively move all scales in snake
         draw_snake(&snake, board); // adds all snake scales the tiles in the board
         draw_fruit(&fruit, board); // adds fruit to random blank tile in board
         draw_board(board); // clear the screen and draw the entire board
         
         handle_input(&snake); // read an input and change directions accordingly
+        move_scale(&snake); // recursively move all scales in snake
         check_fruit(&snake, &fruit); // check if snake head has collided with the fruit
         usleep(150000);
     }

@@ -66,7 +66,7 @@ void calculateForSurface(float cubeX, float cubeY, float cubeZ, int ch) {
 
 int main(int argc, char* argv[]) {
   if(argc > 2){
-    fprintf(stderr, "Usage: ./a.out [color]\n\tcolor(optional): [black, red, green, yellow, blue, magenta, cyan]\n");
+    fprintf(stderr, "Usage: %s [color]\n\tcolor(optional): [black, red, green, yellow, blue, magenta, cyan]\n", argv[0]);
     return -1;
   }
 
@@ -86,7 +86,7 @@ int main(int argc, char* argv[]) {
         else if(!strcmp(argv[1], "cyan"))
           printf(ANSI_CYAN);
         else{
-          fprintf(stderr, "Usage: ./a.out [color]\n\tcolor(optional): [black, red, green, yellow, blue, magenta, cyan]\n");
+          fprintf(stderr, "Usage: %s [color]\n\tcolor(optional): [black, red, green, yellow, blue, magenta, cyan]\n", argv[0]);
           return -1;
         }
           
