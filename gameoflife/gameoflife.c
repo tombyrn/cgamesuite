@@ -8,9 +8,8 @@
 #define bool int
 
 #define SLEEP_TIME 1
-#define WIDTH 120
-#define HEIGHT 60
-#define SEED_AMT (WIDTH*HEIGHT)/10
+#define WIDTH 100
+#define HEIGHT 30
 
 #define RED "\x1b[;31m"
 #define GREEN "\x1b[;32m"
@@ -20,7 +19,7 @@
 #define CYAN "\x1b[;36m"
 #define WHITE "\x1b[;37m"
 #define BLACK "\x1b[;30m"
-#define RESET "\x1b[;39m"
+#define CLEAR_SCREEN printf("\x1b[2J\x1b[H")
 
 typedef struct cell{
     char value;
@@ -35,11 +34,13 @@ typedef struct cell{
     struct cell *tl, *tm, *tr, *ml, *mr, *bl, *bm, *br;
 } cell;
 
-
-cell cell_matrix[HEIGHT][WIDTH] = {0};
+/* Global Variables */
+cell** cell_matrix;
+int width, height;
 
 const char bgChar = ' ';
 
+/* Cell Functions */
 // set cell to alive
 void bring_cell_to_life(cell* c){
     int rand_char = (rand() % 93)+33; // generate 33-126 in ascii
@@ -72,115 +73,125 @@ void bring_cell_to_life(cell* c){
         color_code  =  BLACK;
         break;
     }
-    (*c).value = rand_char;
-    (*c).color_code = color_code;
-    (*c).alive = true;
+
+    // assign cell random color and character
+    c->value = rand_char;
+    c->color_code = color_code;
+    c->alive = true;
 }
 
 // set cell to dead
 void kill_cell(cell* c){
-    (*c).value = bgChar;
-    (*c).alive = false;
+    c->value = bgChar;
+    c->alive = false;
 }
 
 // checks if neigboring cells around *c exist, if they don't set their pointer to NULL
 void init_neighbor_cells(cell* c, int i, int j){
-
+    /* TOP NEIGHBORS */ 
     // set top left neighbor cell
-    if(i-1 < 0 && j-1 < 0)
-        (*c).tl  = NULL;
+    if(i-1 < 0 || j-1 < 0)
+        c->tl  = NULL;
     else
-        (*c).tl = &(cell_matrix[i-1][j-1]);
+        c->tl = &(cell_matrix[i-1][j-1]);
 
     // set top middle neighbor cell
     if(i-1 < 0)
-        (*c).tm  = NULL;
+        c->tm  = NULL;
     else
-        (*c).tm = &(cell_matrix[i-1][j]);
+        c->tm = &(cell_matrix[i-1][j]);
 
     // set top right neighbor cell
-    if(i-1 < 0 && j+1 >= WIDTH)
-        (*c).tr  = NULL;
+    if(i-1 < 0 || j+1 >= width)
+        c->tr  = NULL;
     else
-        (*c).tr = &(cell_matrix[i-1][j+1]);
+        c->tr = &(cell_matrix[i-1][j+1]);
 
+    /* MIDDLE NEIGHBORS */ 
     // set middle left neighbor cell
     if(j-1 < 0)
-        (*c).ml  = NULL;
+        c->ml  = NULL;
     else
-        (*c).ml = &(cell_matrix[i][j-1]);
+        c->ml = &(cell_matrix[i][j-1]);
 
     // set middle right neighbor cell
-    if(j+1 >= WIDTH)
-        (*c).mr  = NULL;
+    if(j+1 >= width)
+        c->mr  = NULL;
     else
-        (*c).mr = &(cell_matrix[i][j+1]);
+        c->mr = &(cell_matrix[i][j+1]);
 
+    /* BOTTOM NEIGHBORS */ 
     // set bottom left neighbor cell
-    if(i+1 >= HEIGHT && j-1 < 0)
-        (*c).bl  = NULL;
+    if(i+1 >= height || j-1 < 0)
+        c->bl  = NULL;
     else
-        (*c).bl = &(cell_matrix[i+1][j-1]);
+        c->bl = &(cell_matrix[i+1][j-1]);
 
-    // set top middle neighbor cell
-    if(i+1 >= HEIGHT)
-        (*c).bm  = NULL;
+    // set bottom middle neighbor cell
+    if(i+1 >= height)
+        c->bm  = NULL;
     else
-        (*c).bm = &(cell_matrix[i+1][j]);
+        c->bm = &(cell_matrix[i+1][j]);
 
-    // set top right neighbor cell
-    if(i+1 >= HEIGHT && j+1 >= WIDTH)
-        (*c).br  = NULL;
+    // set bottom right neighbor cell
+    if(i+1 >= height || j+1 >= width)
+        c->br  = NULL;
     else
-        (*c).br = &(cell_matrix[i+1][j+1]);
+        c->br = &(cell_matrix[i+1][j+1]);
     
 }
 
+// count the number of live neighbors around cell *c
 int count_living_neighbors(cell* c, int i, int j){
     int count =  0;
-    cell curr_cell = *c;
-
-    // int* testn = NULL;
 
     // count upper row of live neighbors
-    if(curr_cell.tl && curr_cell.tl->alive)
+    if(c->tl && c->tl->alive)
         count++;
-    if(curr_cell.tm && curr_cell.tm->alive)
+    if(c->tm && c->tm->alive)
         count++;
-    if(curr_cell.tr && curr_cell.tr->alive)
+    if(c->tr && c->tr->alive)
         count++;
 
     // count live cells to left or right
-    if(curr_cell.ml && curr_cell.ml->alive)
+    if(c->ml && c->ml->alive)
         count++;
-    if(curr_cell.mr && curr_cell.mr->alive)
+    if(c->mr && c->mr->alive)
         count++;
 
     // count bottom row of live neighbors
-    if(curr_cell.bl && curr_cell.bl->alive)
+    if(c->bl && c->bl->alive)
         count++;
-    if(curr_cell.bm && curr_cell.bm->alive)
+    if(c->bm && c->bm->alive)
         count++;
-    if(curr_cell.br && curr_cell.br->alive)
+    if(c->br && c->br->alive)
         count++;
 
     return count;
-    
 }
+
+/* Grid Functions */
 
 // initialize every cell in cell_matrix to dead and set their neighbors
 void init_grid(){
-    for(int i = 0; i < HEIGHT; i++){
-        for(int j = 0; j < WIDTH; j++){
+    // allocate memory for cell_matrix
+    cell_matrix = calloc(height, sizeof(cell*));
+    for(int i = 0; i < height; i++)
+        cell_matrix[i] = calloc(width, sizeof(cell));
+
+    // initialize cells
+    for(int i = 0; i < height; i++){
+        for(int j = 0; j < width; j++){
             kill_cell(&(cell_matrix[i][j]));
             init_neighbor_cells(&(cell_matrix[i][j]), i, j);
         }
     }
 }
 
+// draw the grid to the terminal
 void draw_grid(){
-    for(int i = 0; i < HEIGHT; i++){
-        for(int j = 0; j < WIDTH; j++){
+    for(int i = 0; i < height; i++){
+        for(int j = 0; j < width; j++){
             if(cell_matrix[i][j].alive)
                 printf("%s",cell_matrix[i][j].color_code);
             putchar(cell_matrix[i][j].value);
@@ -190,10 +201,12 @@ void draw_grid(){
     sleep(SLEEP_TIME);
 }
 
+// randomly seed the grid with living cells
 void seed(){
-    for(int c = 0; c < SEED_AMT; c++){
-        int i = rand() % HEIGHT;
-        int j = rand() % WIDTH;
+    int seed_amt = (width * height) / 8;
+    for(int c = 0; c < seed_amt; c++){
+        int i = rand() % height;
+        int j = rand() % width;
 
         bring_cell_to_life(&(cell_matrix[i][j]));
     }
@@ -206,8 +219,8 @@ void seed(){
     4. Any dead cell with exactly three live neighbours becomes a live cell, as if by reproduction.
 */
 void next_generation(){
-    for(int i = 0; i < HEIGHT; i++){
-        for(int j = 0; j < WIDTH; j++){
+    for(int i = 0; i < height; i++){
+        for(int j = 0; j < width; j++){
             int live_neighbors = count_living_neighbors(&(cell_matrix[i][j]), i, j);
             if(cell_matrix[i][j].alive){
                 // Rules 1-3
@@ -222,15 +235,35 @@ void next_generation(){
     }
 }
 
-int main() {
+void parse_arguments(int argc, char** argv){
+    if(argc == 3){
+        width = atoi(argv[1]);
+        height = atoi(argv[2]);
+        if(width < 1 || height < 1){
+            printf("Width and height must be integers greater than 0\n");
+            exit(1);
+        }
+    }
+    else if(argc == 1){
+        width = WIDTH;
+        height = HEIGHT;
+    }
+    else {
+        printf("Usage: ./gameoflife [width] [height]\n");
+        exit(1);
+    }
+}
 
-    srand(time(NULL));
+int main(int argc, char** argv) {
 
+    srand(time(NULL)); // seed random number generator
+
+    parse_arguments(argc, argv);
     init_grid();
     seed();
 
     while(1){
-        printf("\x1b[2J\x1b[H");
+        CLEAR_SCREEN;
         draw_grid();
         next_generation();
     }

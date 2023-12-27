@@ -1,5 +1,5 @@
-CC = clang
-CFLAGS  = -O3 -g -Wall -std=c17 
+CC = gcc
+CFLAGS  =  -g -Wall -std=c17 
 
 TARGET = gameoflife
 
