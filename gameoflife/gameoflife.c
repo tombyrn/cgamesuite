@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <stdlib.h>
+#include <signal.h>
 
 #define true 1
 #define false 0
@@ -254,7 +255,20 @@ void parse_arguments(int argc, char** argv){
     }
 }
 
+void sigint_handler(){
+    for(int i = 0; i < height; i++)
+        free(cell_matrix[i]);
+    free(cell_matrix);
+    // printf("Freed & Exiting...\n");
+    exit(0);
+}
+
 int main(int argc, char** argv) {
+
+    if(signal(SIGINT, sigint_handler) == SIG_ERR){
+        fprintf(stderr, "Error: Cannot catch SIGINT\n");
+        return -1;
+    }
 
     srand(time(NULL)); // seed random number generator
 
