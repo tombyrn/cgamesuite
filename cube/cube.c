@@ -92,7 +92,7 @@ int main(int argc, char* argv[]) {
           
   }
 
-  printf("\x1b[2J"); // clears terminal screen
+  printf("\x1b[2J\x1b[H"); // clears terminal screen
   while (1) {
     memset(buffer, backgroundASCIICode, width * height);
     memset(zBuffer, 0, width * height * 4);
