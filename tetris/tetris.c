@@ -29,7 +29,7 @@ typedef struct tetronimo {
 
 char board[BOARD_HEIGHT][BOARD_WIDTH];
 struct termios orig_termios;
-char input[3] = {0};
+char input[3] = {0}; // input buffer (3 bytes for arrow keys)
 
 bool alive = true;
 tetronimo* head = NULL; // first block generated
@@ -126,14 +126,13 @@ tetronimo* initialize_block(tetronimo* prev) {
         block->bricks->symbol = '@';
         block->bricks->x = BOARD_WIDTH/2;
         block->bricks->y = 0;
-
         block->bricks->prev = NULL;
         block->bricks->next = malloc(sizeof(brick));
+
 
         block->bricks->next->symbol = '!';
         block->bricks->next->x = BOARD_WIDTH/2;
         block->bricks->next->y = 1;
-
         block->bricks->next->prev = block->bricks;
         block->bricks->next->next = malloc(sizeof(brick));
 
@@ -141,13 +140,13 @@ tetronimo* initialize_block(tetronimo* prev) {
         block->bricks->next->next->symbol = '$';
         block->bricks->next->next->x = BOARD_WIDTH/2 + 1;
         block->bricks->next->next->y = 1;
-        block->bricks->next->next->prev = NULL;
+        block->bricks->next->next->prev = block->bricks->next;
         block->bricks->next->next->next = NULL;
 
-        if(current_block) {
+        if(current_block && current_block->bricks->x+1 < BOARD_WIDTH-1) {
             block->bricks->x = current_block->bricks->x;
             block->bricks->next->x = current_block->bricks->x;
-            block->bricks->next->next->x = current_block->bricks->x;
+            block->bricks->next->next->x = current_block->bricks->x+1;
         }
     }
     else{
@@ -163,7 +162,7 @@ tetronimo* initialize_block(tetronimo* prev) {
         block->bricks->next->symbol = '&';
         block->bricks->next->x = BOARD_WIDTH/2;
         block->bricks->next->y = 1;
-        block->bricks->next->prev = NULL;
+        block->bricks->next->prev = block->bricks;
         block->bricks->next->next = NULL;
 
         if(current_block) {
@@ -188,7 +187,7 @@ void move_down(tetronimo* current) {
     brick* current_brick = current->bricks;
 
     while(current_brick != NULL) {
-        if(current_brick->y+1 < BOARD_HEIGHT)
+        if(current_brick->y+1 < BOARD_HEIGHT-1)
             current_brick->y++;
 
         current_brick = current_brick->next;
@@ -247,37 +246,108 @@ void evaluate_block(tetronimo* current) {
 
 
 void find_and_free_brick(int row, int col) {
+    // go through every block 
     tetronimo* current = head;
     while(current != NULL) {
+
         brick* curr_brick = current->bricks;
+
+        // remove block from linked list if it has no bricks left
+        if(curr_brick == NULL) {
+            tetronimo* next = current->next;
+
+            if(current->prev)
+                current->prev->next = next;
+            else head = next;
+
+            if(next)
+                next->prev = current->prev;
+
+            free(current);
+            current = next;
+            continue;
+        }
+
+        // go through every brick in that block
         while(curr_brick != NULL) {
+
             // brick has been found
             if(curr_brick->y == row && curr_brick->x == col) {
-                if(curr_brick->prev) {
-                    if(curr_brick->next)
-                        curr_brick->prev->next = curr_brick->next;
-                    else
-                        curr_brick->prev->next = NULL;
-                }
-                if(curr_brick->next) {
-                    if(curr_brick->prev)
-                        curr_brick->next->prev = curr_brick->prev;
-                    else
-                        curr_brick->next->prev = NULL;
-                }
+                // remove from double linked list
+                if(curr_brick->prev) 
+                    curr_brick->prev->next = curr_brick->next;
 
-                brick* temp = curr_brick;
+                if(curr_brick->next)
+                    curr_brick->next->prev = curr_brick->prev;
+
+                if(current->bricks == curr_brick) 
+                    current->bricks = curr_brick->next;
+                
+
+                brick* save = curr_brick;
                 curr_brick = curr_brick->next;
-                free(temp);
+                free(save);
             }
             else
                 curr_brick = curr_brick->next;
         }
 
         current = current->next;
-        }
+    }
 
 }
+
+// void find_and_free_brick(int row, int col) {
+//     // go through every block 
+//     tetronimo* current = head;
+//     while(current != NULL) {
+//         brick* curr_brick = current->bricks;
+
+//         // remove block from linked list if it has no bricks left
+//         if(curr_brick == NULL) {
+//             tetronimo* next = current->next;
+
+//             if(current->prev)
+//                 current->prev->next = next;
+//             else
+//                 head = next; // current is head
+
+//             if(next)
+//                 next->prev = current->prev;
+
+//             free(current);
+//             current = next;
+//             continue;
+//         }
+
+//         // go through every brick in that block
+//         while(curr_brick != NULL) {
+//             // brick has been found
+//             if(curr_brick->y == row && curr_brick->x == col) {
+//                 // remove from double linked list
+//                 if(curr_brick->prev) 
+//                     curr_brick->prev->next = curr_brick->next;
+
+//                 if(curr_brick->next)
+//                     curr_brick->next->prev = curr_brick->prev;
+
+//                 // Check if current->bricks needs updating
+//                 if (current->bricks == curr_brick) {
+//                     current->bricks = curr_brick->next;
+//                 }
+
+//                 brick* save = curr_brick;
+//                 curr_brick = curr_brick->next;
+//                 free(save);
+//             } else {
+//                 curr_brick = curr_brick->next;
+//             }
+//         }
+
+//         current = current->next;
+//     }
+// }
+
 
 
 void clear_row(int row) {
@@ -298,30 +368,68 @@ void iterate() {
     for(int i = 0; i < BOARD_HEIGHT; i++) {
         bool canClear = true;   
         for(int j = 0; j < BOARD_WIDTH; j++) {
-            if(board[i][j] == ' ')
+            if(board[i][j] == ' '){
                 canClear = false;
+                break;
+            }
         }
         if(canClear)
             clear_row(i);
     }
 }
 
-bool can_move(brick* b, char direction) {
-    bool movable = false;
-
+bool can_move(tetronimo* block, char direction) {
+    bool movable = true;
+    brick* curr_brick = block->bricks;
+    int leftmostX = curr_brick->x;
+    int rightmostX = curr_brick->x;
+    int lowestY = curr_brick->y;
     switch (direction) {
         case 'l':
-            if(b->x-1 > 0)
-                movable = true;
+                // find leftmost brick x position;
+                while(curr_brick != NULL) {
+                    if(curr_brick->x < leftmostX)
+                        leftmostX = curr_brick->x;
+                    curr_brick = curr_brick->next;
+                }
+                // if any of the leftmost bricks can't be moved movable is false
+                curr_brick = block->bricks;
+                while(curr_brick != NULL) {
+                    if(curr_brick->x == leftmostX && (curr_brick->x-1 < 1 || board[curr_brick->y][curr_brick->x-1] != ' '))
+                        movable = false;
+                    curr_brick = curr_brick->next;
+                }
             break;
         case 'r':
-            if(b->x+1 < BOARD_WIDTH-1){
-                movable = true;
-            }
+                // find rightmost brick x position;
+                while(curr_brick != NULL) {
+                    if(curr_brick->x > rightmostX)
+                        rightmostX = curr_brick->x;
+                    curr_brick = curr_brick->next;
+                }
+                // if any of the rightmost bricks can't be moved movable is false
+                curr_brick = block->bricks;
+                while(curr_brick != NULL) {
+                    if(curr_brick->x == rightmostX && (curr_brick->x+1 == BOARD_WIDTH-1 || board[curr_brick->y][curr_brick->x+1] != ' '))
+                        movable = false;
+                    curr_brick = curr_brick->next;
+                }
             break;
         case 'd':
-            if(b->y+1 < BOARD_HEIGHT-1)
-                movable = true;
+                // find lowest brick y position;
+                while(curr_brick != NULL) {
+                    if(curr_brick->y < lowestY)
+                        lowestY = curr_brick->y;
+                    curr_brick = curr_brick->next;
+                }
+                // if any of the lowest bricks can't be moved movable is false
+                curr_brick = block->bricks;
+                while(curr_brick != NULL) {
+                    if(curr_brick->y == lowestY && (curr_brick->y+1 == BOARD_HEIGHT-1 || board[curr_brick->y+1][curr_brick->x] != ' '))
+                        movable = false;
+                    curr_brick = curr_brick->next;
+                }
+            
             break;
         default:
             break;
@@ -330,21 +438,21 @@ bool can_move(brick* b, char direction) {
 
 }
 
-void move_block(char direction) {
-        brick* curr_brick = current_block->bricks;
+void move_block(tetronimo* block, char direction) {
+        if(!can_move(block, direction))
+            return;
+
+        brick* curr_brick = block->bricks;
         while(curr_brick != NULL) {
             switch (direction) {
                 case 'l':
-                    if(can_move(curr_brick, direction))
-                        curr_brick->x--;
+                    curr_brick->x--;        
                     break;
                 case 'r':
-                    if(can_move(curr_brick, direction))
-                        curr_brick->x++;
-                    break;
+                    curr_brick->x++; 
+                    break;       
                 case 'd':
-                    if(can_move(curr_brick, direction))
-                        curr_brick->y++;
+                    curr_brick->y++;        
                     break;
                 case 'n':
                     break;
@@ -415,7 +523,7 @@ void process_input() {
         }
     }
 
-    move_block(inputDir);
+    move_block(current_block, inputDir);
 
 }
 
@@ -438,13 +546,10 @@ int main(int argc, char** argv) {
         draw_blocks_to_board();
         draw_board();
 
-        RESET_SCREEN;
-        // initialize_board();
         process_input();
         iterate(); //check clearings and move bricks down
-        draw_board();
 
-        usleep(300000);
+        usleep(150000);
     }
     printf("You lost");
 

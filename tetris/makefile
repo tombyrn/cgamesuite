@@ -1,5 +1,5 @@
 CC = clang
-CFLAGS  = -O3 -g -Wall -Werror -std=c17 
+CFLAGS  = -O3 -g -Wall -Werror -std=c17
 
 TARGET = tetris
 
