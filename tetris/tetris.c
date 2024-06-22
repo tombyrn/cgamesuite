@@ -9,7 +9,17 @@
 
 #define BOARD_WIDTH 20
 #define BOARD_HEIGHT 25
+#define BORDER_COLOR "\e[1;34m"
 #define RESET_SCREEN printf("\x1b[2J\x1b[H")
+
+#define HBLK "\e[0;90m"
+#define HRED "\e[0;91m"
+#define HGRN "\e[0;92m"
+#define HYEL "\e[0;93m"
+#define HBLU "\e[0;94m"
+#define HMAG "\e[0;95m"
+#define HCYN "\e[0;96m"
+#define HWHT "\e[0;97m"
 
 typedef struct brick {
     char symbol;
@@ -24,10 +34,16 @@ typedef struct tetronimo {
     struct tetronimo* prev;
     struct tetronimo* next;
     brick* bricks;
+    char* color;
 
 } tetronimo;
 
-char board[BOARD_HEIGHT][BOARD_WIDTH];
+typedef struct pixel {
+    char symbol;
+    char* color;
+} pixel;
+
+pixel board[BOARD_HEIGHT][BOARD_WIDTH];
 struct termios orig_termios;
 char input[3] = {0}; // input buffer (3 bytes for arrow keys)
 
@@ -50,7 +66,8 @@ void enable_raw_input() {
 void draw_board() {
     for (int i = 0; i < BOARD_HEIGHT; i++) {
         for (int j = 0; j < BOARD_WIDTH; j++) {
-            putchar(board[i][j]);
+            printf("%s", board[i][j].color);
+            putchar(board[i][j].symbol);
         }
         putchar('\n');
     }
@@ -63,7 +80,8 @@ void draw_blocks_to_board() {
         brick* curr_brick = current->bricks;
         // go through each brick in block
         while(curr_brick != NULL) {
-            board[curr_brick->y][curr_brick->x] = curr_brick->symbol;
+            board[curr_brick->y][curr_brick->x].symbol = curr_brick->symbol;
+            board[curr_brick->y][curr_brick->x].color = current->color;
             curr_brick = curr_brick->next;
         }
 
@@ -97,14 +115,39 @@ void sigint_handler(){
 void initialize_board() {
     for (int i = 0; i < BOARD_HEIGHT; i++) {
         for (int j = 0; j < BOARD_WIDTH; j++) {
+            board[i][j].color = BORDER_COLOR;
+            // draw borders
             if(i == BOARD_HEIGHT - 1 || j == 0 || j == BOARD_WIDTH - 1)
-                board[i][j] = '#';
+                board[i][j].symbol = '#';
             else
-                board[i][j] = ' ';
+                board[i][j].symbol = ' ';
+            
         }
     }
 }
 
+char* random_color() {
+    int rand_color = rand() % 7;
+
+    switch(rand_color) {
+        case 0:
+            return HRED;
+        case 1:
+            return HGRN;
+        case 2:
+            return HYEL;
+        case 3:
+            return HBLU;
+        case 4:
+            return HMAG;
+        case 5:
+            return HCYN;
+        case 6:
+            return HWHT;
+    }
+
+    return HBLU;
+}
 
 // Creates a new tetronimo block and returns a pointer to it
 // also sets the global current_block* to the address of this block
@@ -112,13 +155,15 @@ tetronimo* initialize_block(tetronimo* prev) {
     tetronimo* block = malloc(sizeof(tetronimo));
     block->dead = false;
     block->variation = rand() % 2;
+    block->color = random_color();
+    
     /*
         Variation is 1:
             @
-            @@
+            !$
         Variation is 0:
-            @
-            @
+            %
+            &
     */
    // initialize bricks linked list
     if(block->variation){
@@ -223,7 +268,7 @@ void evaluate_block(tetronimo* current) {
         }
 
         // if any of the lowest bricks aren't above a blank tile(' ') then the block should not move down
-        if(lowest && board[curr_brick->y+1][curr_brick->x] != ' ')
+        if(lowest && board[curr_brick->y+1][curr_brick->x].symbol != ' ')
             shouldMove = false;
 
         curr_brick = curr_brick->next;
@@ -297,59 +342,6 @@ void find_and_free_brick(int row, int col) {
 
 }
 
-// void find_and_free_brick(int row, int col) {
-//     // go through every block 
-//     tetronimo* current = head;
-//     while(current != NULL) {
-//         brick* curr_brick = current->bricks;
-
-//         // remove block from linked list if it has no bricks left
-//         if(curr_brick == NULL) {
-//             tetronimo* next = current->next;
-
-//             if(current->prev)
-//                 current->prev->next = next;
-//             else
-//                 head = next; // current is head
-
-//             if(next)
-//                 next->prev = current->prev;
-
-//             free(current);
-//             current = next;
-//             continue;
-//         }
-
-//         // go through every brick in that block
-//         while(curr_brick != NULL) {
-//             // brick has been found
-//             if(curr_brick->y == row && curr_brick->x == col) {
-//                 // remove from double linked list
-//                 if(curr_brick->prev) 
-//                     curr_brick->prev->next = curr_brick->next;
-
-//                 if(curr_brick->next)
-//                     curr_brick->next->prev = curr_brick->prev;
-
-//                 // Check if current->bricks needs updating
-//                 if (current->bricks == curr_brick) {
-//                     current->bricks = curr_brick->next;
-//                 }
-
-//                 brick* save = curr_brick;
-//                 curr_brick = curr_brick->next;
-//                 free(save);
-//             } else {
-//                 curr_brick = curr_brick->next;
-//             }
-//         }
-
-//         current = current->next;
-//     }
-// }
-
-
-
 void clear_row(int row) {
     for(int i = 0; i < BOARD_WIDTH; i++) {
         find_and_free_brick(row, i);
@@ -368,7 +360,7 @@ void iterate() {
     for(int i = 0; i < BOARD_HEIGHT; i++) {
         bool canClear = true;   
         for(int j = 0; j < BOARD_WIDTH; j++) {
-            if(board[i][j] == ' '){
+            if(board[i][j].symbol == ' '){
                 canClear = false;
                 break;
             }
@@ -395,7 +387,7 @@ bool can_move(tetronimo* block, char direction) {
                 // if any of the leftmost bricks can't be moved movable is false
                 curr_brick = block->bricks;
                 while(curr_brick != NULL) {
-                    if(curr_brick->x == leftmostX && (curr_brick->x-1 < 1 || board[curr_brick->y][curr_brick->x-1] != ' '))
+                    if(curr_brick->x == leftmostX && (curr_brick->x-1 < 1 || board[curr_brick->y][curr_brick->x-1].symbol != ' '))
                         movable = false;
                     curr_brick = curr_brick->next;
                 }
@@ -410,7 +402,7 @@ bool can_move(tetronimo* block, char direction) {
                 // if any of the rightmost bricks can't be moved movable is false
                 curr_brick = block->bricks;
                 while(curr_brick != NULL) {
-                    if(curr_brick->x == rightmostX && (curr_brick->x+1 == BOARD_WIDTH-1 || board[curr_brick->y][curr_brick->x+1] != ' '))
+                    if(curr_brick->x == rightmostX && (curr_brick->x+1 == BOARD_WIDTH-1 || board[curr_brick->y][curr_brick->x+1].symbol != ' '))
                         movable = false;
                     curr_brick = curr_brick->next;
                 }
@@ -425,7 +417,7 @@ bool can_move(tetronimo* block, char direction) {
                 // if any of the lowest bricks can't be moved movable is false
                 curr_brick = block->bricks;
                 while(curr_brick != NULL) {
-                    if(curr_brick->y == lowestY && (curr_brick->y+1 == BOARD_HEIGHT-1 || board[curr_brick->y+1][curr_brick->x] != ' '))
+                    if(curr_brick->y == lowestY && (curr_brick->y+1 == BOARD_HEIGHT-1 || board[curr_brick->y+1][curr_brick->x].symbol != ' '))
                         movable = false;
                     curr_brick = curr_brick->next;
                 }
@@ -549,7 +541,7 @@ int main(int argc, char** argv) {
         process_input();
         iterate(); //check clearings and move bricks down
 
-        usleep(150000);
+        usleep(200000);
     }
     printf("You lost");
 
