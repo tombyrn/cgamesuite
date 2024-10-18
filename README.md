@@ -10,9 +10,15 @@ Current Library:
 
     - gameofwar | Altered version of Conway's Game of Life 
 
+    - heap | Simple heap data structure implementation
+
+    - hmap | Simple hash map data structure implementation
+
     - raycaster | 2.5 Raycaster Graphic Engine
 
     - snake | Classic snake game
+
+    - tetris | Classic tetris game
 
     - wordlesolver | Helper to guide you toward the daily wordle solution
 
