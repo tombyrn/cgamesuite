@@ -6,7 +6,7 @@ TARGET = tetris
 all: $(TARGET)
 
 $(TARGET): $(TARGET).c
-	$(CC) $(TARGET).c $(CFLAGS) -o $(TARGET).out
+	$(CC) $(TARGET).c $(CFLAGS) -lpthread -o $(TARGET).out
 
 clean:
 	$(RM) $(TARGET)

@@ -6,6 +6,9 @@
 #include <stdbool.h>
 #include <string.h>
 #include <signal.h>
+#include <pthread.h>
+#include <errno.h>
+
 
 #define BOARD_WIDTH 20
 #define BOARD_HEIGHT 25
@@ -51,6 +54,10 @@ bool alive = true;
 tetronimo* head = NULL; // first block generated
 tetronimo* current_block = NULL; // current user-controlled block
 
+pthread_t input_t;
+pthread_attr_t input_t_attr;
+pthread_mutex_t input_mutex;
+
 
 void enable_raw_input() {
     tcgetattr(STDIN_FILENO, &orig_termios);
@@ -93,7 +100,7 @@ void disable_raw_input() {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
 }
 
-void sigint_handler(){
+void cleanup() {
     tetronimo* current = head;
     while(current != NULL) {
         brick* curr_brick = current->bricks;
@@ -110,7 +117,6 @@ void sigint_handler(){
     disable_raw_input();
     exit(0);
 }
-
 
 void initialize_board() {
     for (int i = 0; i < BOARD_HEIGHT; i++) {
@@ -410,7 +416,7 @@ bool can_move(tetronimo* block, char direction) {
         case 'd':
                 // find lowest brick y position;
                 while(curr_brick != NULL) {
-                    if(curr_brick->y < lowestY)
+                    if(curr_brick->y > lowestY)
                         lowestY = curr_brick->y;
                     curr_brick = curr_brick->next;
                 }
@@ -455,91 +461,117 @@ void move_block(tetronimo* block, char direction) {
         }
 }
 
-void process_input() {
-    memset(input, 0, sizeof(input));
-    char inputDir = 'n'; // Will be either 'n', 'l', 'r', 'd'
-                            /*
-                                none
-                                left
-                                right
-                                down
-                            */
+// running in separate thread
+void* process_input() {
 
-    size_t bytes_read = read(0, &input, sizeof(input));
+    while(alive) {
+        memset(input, 0, sizeof(input));
+        char inputDir = 'n'; // Will be either 'n', 'l', 'r', 'd'
+                                /*
+                                    none
+                                    left
+                                    right
+                                    down
+                                */
 
+        size_t bytes_read = read(0, &input, sizeof(input));
 
-    //Read character key
-    if (bytes_read == 1) {
-        // Single character input, handle regular keys
-        char inputChar = input[0];
-        switch(inputChar) {
-            case 'a':
-                inputDir = 'l';
-                break;
-            case 'A':
-                inputDir = 'l';
-                break;
-            case 's':
-                inputDir = 'd';
-                break;
-            case 'S':
-                inputDir = 'd';
-                break;
-            case 'd':
-                inputDir = 'r';
-                break;
-            case 'D':
-                inputDir = 'r';
-                break;
+        //Read character key
+        if (bytes_read == 1) {
+
+            // Single character input, handle regular keys
+            char inputChar = input[0];
+            switch(inputChar) {
+                case 'a':
+                    inputDir = 'l';
+                    break;
+                case 'A':
+                    inputDir = 'l';
+                    break;
+                case 's':
+                    inputDir = 'd';
+                    break;
+                case 'S':
+                    inputDir = 'd';
+                    break;
+                case 'd':
+                    inputDir = 'r';
+                    break;
+                case 'D':
+                    inputDir = 'r';
+                    break;
+            }
+
         }
+        //Read Arrow Key 
+        else if (bytes_read == 3 && input[0] == '\033' && input[1] == '[') {
+            // Arrow key detected, buffer[2] contains the specific arrow key code
+            char arrowKey = input[2];
 
-    }
-    //Read Arrow Key 
-    else if (bytes_read == 3 && input[0] == '\033' && input[1] == '[') {
-        // Arrow key detected, buffer[2] contains the specific arrow key code
-        char arrowKey = input[2];
-
-        switch (arrowKey) {
-            // Down arrow key
-            case 'B':
-                inputDir = 'd';
-                break;
-            // Right arrow key
-            case 'C':
-                inputDir = 'r';
-                break;
-            // Left arrow key
-            case 'D':
-                inputDir = 'l';
-                break;
+            switch (arrowKey) {
+                // Down arrow key
+                case 'B':
+                    inputDir = 'd';
+                    break;
+                // Right arrow key
+                case 'C':
+                    inputDir = 'r';
+                    break;
+                // Left arrow key
+                case 'D':
+                    inputDir = 'l';
+                    break;
+            }
         }
+        pthread_mutex_lock(&input_mutex);
+        move_block(current_block, inputDir);
+        pthread_mutex_unlock(&input_mutex);
     }
 
-    move_block(current_block, inputDir);
-
+    pthread_exit(NULL);
 }
 
+
 int main(int argc, char** argv) {
+    pthread_attr_init(&input_t_attr);
+
 
     srand(time(NULL));
 
-    if(signal(SIGINT, sigint_handler) == SIG_ERR){
+    if(signal(SIGINT, cleanup) == SIG_ERR){
         fprintf(stderr, "Cannot catch SIGINT\n");
         return -1;
     }
 
     enable_raw_input();
 
+    if(pthread_create(&input_t, &input_t_attr, process_input, NULL) != 0) {
+        printf("Error: Thread creation failed\n");
+        return -1;
+    }
+    pthread_detach(input_t);
+
+    if(pthread_mutex_init(&input_mutex, NULL) != 0) {
+        printf("Error: Mutex creation failed\n");
+        return -1;
+    };
+
     head = initialize_block(NULL);
+
     
     while(alive){
         RESET_SCREEN;
         initialize_board();
-        draw_blocks_to_board();
+
+        pthread_mutex_lock(&input_mutex);
+            draw_blocks_to_board();
+        pthread_mutex_unlock(&input_mutex);
+
         draw_board();
 
-        process_input();
-        iterate(); //check clearings and move bricks down
+        pthread_mutex_lock(&input_mutex);
+            iterate(); //check clearings and move bricks down
+        pthread_mutex_unlock(&input_mutex);
 
         usleep(200000);
     }
