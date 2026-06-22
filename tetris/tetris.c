@@ -24,6 +24,67 @@
 #define HWHT "\e[0;97m"
 
 #define MAX_BRICKS 4
+#define L_PIECE 0
+#define I_PIECE 1
+
+#define CURRENT_BLOCK &block_array.data[block_array.size-1]
+
+// [rotation][brick][x/y]
+int I_SHAPE_ROTATION[4][2][2] = {
+    // rotation 0
+    {
+        {0,0},
+        {0,1}
+    },
+    // rotation 1
+    {
+        {1,0},
+        {0,0}
+    },
+    // rotation 2
+    {
+        {1,1},
+        {1,0}
+    },
+    // rotation 3
+    {
+        {0,1},
+        {1,1}
+    }
+};
+
+int L_SHAPE_ROTATION[4][3][2] = {
+        // rotation 0
+        {
+            {0,0},
+            // {1,0},
+            {0,1},
+            {1,1}
+        },
+        // rotation 1
+        {
+            {1,0},
+            // {1,1},
+            {0,0},
+            {0,1}
+        },
+        // rotation 2
+        {
+            {1,1},
+            // {0,1},
+            {1,0},
+            {0,0}
+        },
+        // rotation 3
+        {
+            {0,1},
+            // {0,0},
+            {1,1},
+            {1,0}
+        } 
+};
+
+void initialize_block();
 
 typedef struct brick {
     char symbol;
@@ -32,16 +93,22 @@ typedef struct brick {
 
 typedef struct tetronimo {
     int variation;
-    bool dead;
-    struct tetronimo* prev;
-    struct tetronimo* next;
+    int rotation;
+    int x, y;
 
-    /* CHANGE: replaced linked list with array */
+    bool dead;
+
     brick bricks[MAX_BRICKS];
     int brick_count;
 
     char* color;
 } tetronimo;
+
+typedef struct tetronimo_array {
+    int capacity;
+    int size;
+    tetronimo* data;
+} tetronimo_array;
 
 typedef struct pixel {
     char symbol;
@@ -61,15 +128,19 @@ struct termios orig_termios;
 char input[3] = {0};
 
 _Atomic bool alive = true;
-tetronimo* head = NULL;
-tetronimo* current_block = NULL;
+_Atomic bool rotate = false;
+
+tetronimo_array block_array; // array of tetonimo blocks being drawn to the board
 
 int score = 0;
+
 
 pthread_t input_t;
 pthread_attr_t input_t_attr;
 pthread_mutex_t input_mutex;
 
+void update_bricks(tetronimo* t);
+void move_block(tetronimo* block, direction dir);
 
 // allow terminal to read user input immediately
 void enable_raw_input() {
@@ -89,15 +160,16 @@ void disable_raw_input() {
 }
 
 // signal handler function for SIGINT
-// free linked list of tetronimos
+void sig_int(int sig) {
+    alive = false;
+}
+
 void cleanup() {
-    tetronimo* current = head;
-    while(current != NULL) {
-        tetronimo* temp = current;
-        current = current->next;
-        free(temp);
-    }
+    if(block_array.data)
+        free(block_array.data);
     disable_raw_input();
+    pthread_mutex_destroy(&input_mutex);
+    pthread_attr_destroy(&input_t_attr);
     exit(0);
 }
 
@@ -132,14 +204,13 @@ void draw_board() {
 
 // places the linked list of tetronimos on the board that gets drawn on screen
 void draw_blocks_to_board() {
-    tetronimo* current = head;
-    while(current != NULL) {
+    for(int i = 0; i < block_array.size; i++) {
+        tetronimo* current = &block_array.data[i];
         for(int i = 0; i < current->brick_count; i++) {
             brick b = current->bricks[i];
             board[b.y][b.x].symbol = b.symbol;
             board[b.y][b.x].color = current->color;
         }
-        current = current->next;
     }
 }
 
@@ -158,121 +229,130 @@ char* random_color() {
     return HBLU;
 }
 
+void setup() {
+    block_array.capacity = 256;
+    block_array.size = 0;
+    block_array.data = calloc(block_array.capacity, sizeof(tetronimo));
+    if(block_array.data == NULL) {
+        printf("block array cannot be allocated\n");
+        exit(1);
+    }
+    initialize_block();
+}
+
 // creates new tetronimo block for the user to control
-tetronimo* initialize_block(tetronimo* prev) {
-    tetronimo* block = malloc(sizeof(tetronimo));
-    block->dead = false;
-    block->variation = rand() % 2;
+void initialize_block() {
+    int i = block_array.size;
 
-    block->color = random_color();
-    // make sure same color is never chosen twice
-    if(current_block)
-        while(!strncmp(current_block->color, block->color, 7))
-            block->color = random_color();
-            
-
-
-    /*
-        variation 1 (todo:rotations)
-        @           !@          $!           $
-        !$          $            @          @!
-    */
-   if(block->variation){
-       block->brick_count = 3;
-       
-       block->bricks[0] = (brick){'@', BOARD_WIDTH/2, 0};
-       block->bricks[1] = (brick){'!', BOARD_WIDTH/2, 1};
-       block->bricks[2] = (brick){'$', BOARD_WIDTH/2 + 1, 1};
-       
-       if(current_block && current_block->bricks[0].x+1 < BOARD_WIDTH-1) {
-           int x = current_block->bricks[0].x;
-           block->bricks[0].x = x;
-           block->bricks[1].x = x;
-           block->bricks[2].x = x+1;
-        }
-    } 
+    block_array.data[i].dead = false;
+    block_array.data[i].variation = rand() % 2;
+    block_array.data[i].rotation = 0;
     
-    /*
-        variation 0
-        %       
-        &
-    */
+    block_array.data[i].x = BOARD_WIDTH / 2;
+    block_array.data[i].y = 0;
+    
+    block_array.data[i].brick_count = 4;
+    
+    
+    block_array.data[i].color = random_color();
+    // make sure same color is never chosen twice
+    if(i > 0 && !strcmp(block_array.data[i-1].color, block_array.data[i].color))
+        block_array.data[i].color = random_color();
+    // while(!strncmp(block_array.data[0].color, block_array.data[0].color, 7))
+    // block_array.data[i].color = random_color();
+    
+    
+    // L shape
+    if(block_array.data[i].variation) {
+        block_array.data[i].brick_count = 3;
+        block_array.data[i].bricks[0].symbol = '@';
+        block_array.data[i].bricks[1].symbol = '^';
+        block_array.data[i].bricks[2].symbol = '&';
+    }
+    // I shape
     else {
-        block->brick_count = 2;
+        block_array.data[i].brick_count = 2;
+        block_array.data[i].bricks[0].symbol = 'a';
+        block_array.data[i].bricks[1].symbol = 'd';
+        
+    }
+    update_bricks(&block_array.data[i]);
+    block_array.size++;
+    if(block_array.size == block_array.capacity) {
+        block_array.capacity *= 2;
+        block_array.data = realloc(block_array.data, block_array.capacity);
+    }
 
-        block->bricks[0] = (brick){'%', BOARD_WIDTH/2, 0};
-        block->bricks[1] = (brick){'&', BOARD_WIDTH/2, 1};
+}
 
-        if(current_block) {
-            int x = current_block->bricks[0].x;
-            block->bricks[0].x = x;
-            block->bricks[1].x = x;
+// sets new x and y coords of each brick in a given tetronimo based on current rotation
+void update_bricks(tetronimo* t) {
+    for(int i = 0; i < t->brick_count; i++) {
+        if(t->variation) {
+            t->bricks[i].x = t->x + L_SHAPE_ROTATION[t->rotation][i][0];
+            t->bricks[i].y = t->y + L_SHAPE_ROTATION[t->rotation][i][1];
+        }
+        else {
+            t->bricks[i].x = t->x + I_SHAPE_ROTATION[t->rotation][i][0];
+            t->bricks[i].y = t->y + I_SHAPE_ROTATION[t->rotation][i][1];
+
         }
     }
-
-    block->prev = NULL;
-    block->next = NULL;
-    if(prev){
-        block->prev = prev;
-        prev->next = block;
-    }
-
-    current_block = block;
-    return block;
 }
 
 // move all bricks in tetronimo down
 void move_down(tetronimo* current) {
-    for(int i = 0; i < current->brick_count; i++) {
-        if(current->bricks[i].y+1 < BOARD_HEIGHT-1)
-            current->bricks[i].y++;
-    }
+    current->y++;
+    update_bricks(current);
 }
 
 // called every frame on each block so bricks fall independently
-void evaluate_block(tetronimo* current) {
-
-    // check if any bricks have killed the player
-    for(int i = 0; i < current->brick_count; i++) {
-        if(current->bricks[i].x < 0 || current->bricks[i].x >= BOARD_WIDTH ||
-           current->bricks[i].y < 0 || current->bricks[i].y >= BOARD_HEIGHT) {
-            alive = false;
-            return;
-        }
-    }
+void evaluate_block(tetronimo* t) {
 
     // find lowest positioned brick (which is technically the highest y value)
-    int lowestY = current->bricks[0].y;
-    for(int i = 0; i < current->brick_count; i++)
-        if(current->bricks[i].y > lowestY)
-            lowestY = current->bricks[i].y;
+    int lowestY = t->bricks[0].y;
+    for(int i = 0; i < t->brick_count; i++)
+        if(t->bricks[i].y > lowestY)
+            lowestY = t->bricks[i].y;
 
     bool shouldMove = true;
 
     // set current block to stop moving when reaches bottom border or another brick
-    for(int i = 0; i < current->brick_count; i++) {
-        brick b = current->bricks[i];
+    // if(t == current_block)
+        for(int i = 0; i < t->brick_count; i++) {
 
-        if(b.y+1 >= BOARD_HEIGHT || 
-            (b.y == lowestY && board[b.y+1][b.x].symbol != ' '))
-            shouldMove = false;
-    }
+            brick b = t->bricks[i];
+
+            // if(b.symbol == ' ') continue;
+
+            bool aboveOwn = false;
+            for(int j = 0; j < t->brick_count; j++) {
+                if(i == j) continue;
+
+                brick bb = t->bricks[j];
+                if(bb.x == b.x && bb.y == b.y+1)
+                    aboveOwn = true;
+            }
+
+            if(b.y+1 >= BOARD_HEIGHT || 
+                (board[b.y+1][b.x].symbol != ' ' && !aboveOwn))
+                shouldMove = false;
+        }
 
     if(shouldMove)
-        move_down(current);
+        move_block(t, DOWN);
 
     // time to create new block for user to pilot
-    if(!shouldMove && current == current_block){
-
-        for(int i = 0; i < current->brick_count; i++) {
-            if(current->bricks[i].y == 0) {
+    if(!shouldMove && t == CURRENT_BLOCK) {
+        for(int i = 0; i < t->brick_count; i++) {
+            if(t->bricks[i].y == 0) {
                 alive = false;
                 return;
             }
         }
 
-        current->dead = true;
-        initialize_block(current);
+        t->dead = true;
+        initialize_block();
     }
 }
 
@@ -286,8 +366,8 @@ void remove_brick_at(tetronimo* t, int index) {
 // removes specific brick from the board by finding corresponding brick in linked list of tetronimos
 void find_and_free_brick(int row, int col) {
 
-    tetronimo* current = head;
-    while(current != NULL) {
+    for(int i = 0; i < block_array.size; i++) {
+        tetronimo* current = &block_array.data[i];
         for(int i = 0; i < current->brick_count; i++) {
             if(current->bricks[i].y == row && current->bricks[i].x == col) {
                 remove_brick_at(current, i);
@@ -296,27 +376,9 @@ void find_and_free_brick(int row, int col) {
         }
 
         // remove empty tetronimo
-        if(current->brick_count == 0) {
+        if(current->brick_count == 0)
+            memccpy(current, &block_array.data[i+1], '\0', (block_array.size * (sizeof(tetronimo))) - ((i+1) * (sizeof(tetronimo))));
 
-            // if(current == current_block)
-            //     current_block = NULL;
-
-            tetronimo* next = current->next;
-
-            if(current->prev)
-                current->prev->next = next;
-            else
-                head = next;
-
-            if(next)
-                next->prev = current->prev;
-
-            free(current);
-            current = next;
-            continue;
-        }
-
-        current = current->next;
     }
 }
 
@@ -331,11 +393,11 @@ void clear_row(int row) {
 void iterate() {
 
     // evaluate every tetronimo in linked list
-    tetronimo* current = head;
-    while(current != NULL) {
-        evaluate_block(current);
-        current = current->next;
+    for(int i = 0; i < block_array.size; i++) {
+        tetronimo* t = &block_array.data[i];
+        evaluate_block(t);
     }
+
 
     int cleared_rows = 0;
     // check if any rows can be cleared
@@ -356,48 +418,86 @@ void iterate() {
     score += (cleared_rows * 10);
 }
 
+bool can_rotate(tetronimo* t) {
+    int next_rotation = (t->rotation+1) % 4;
+    for(int i = 0; i < 4; i++) {
+        int x, y;
+        if(t->variation) {
+            x = t->x +
+                L_SHAPE_ROTATION[next_rotation][i][0];
+            y = t->y +
+                L_SHAPE_ROTATION[next_rotation][i][1];
+            }
+        else {
+            x = t->x +
+                I_SHAPE_ROTATION[next_rotation][i][0];
+            y = t->y +
+                I_SHAPE_ROTATION[next_rotation][i][1];
+
+        }
+        if(x <= 0 || x >= BOARD_WIDTH-1)
+            return false;
+        if(y >= BOARD_HEIGHT-1)
+            return false;
+        // if(board[y][x].symbol != ' ')
+        //     return false;
+    }   
+    return true;
+}
+
 // determine if a block can move in a specific direction
-bool can_move(tetronimo* block, direction dir) {
-    int left = block->bricks[0].x;
-    int right = block->bricks[0].x;
-    int bottom = block->bricks[0].y;
-
-    // find leftmost, rightmost, and lowest bricks
-    for(int i = 0; i < block->brick_count; i++) {
-        if(block->bricks[i].x < left) left = block->bricks[i].x;
-        if(block->bricks[i].x > right) right = block->bricks[i].x;
-        if(block->bricks[i].y > bottom) bottom = block->bricks[i].y;
-    }
-
-    // check if bricks have reached a boundary
-    for(int i = 0; i < block->brick_count; i++) {
-        brick b = block->bricks[i];
-
-        if(dir == LEFT && b.x == left &&
-           (b.x-1 < 1 || board[b.y][b.x-1].symbol != ' '))
+bool can_move(tetronimo* t, int dx, int dy){
+    for(int i = 0; i < t->brick_count; i++) {
+        int x = t->bricks[i].x + dx;
+        int y = t->bricks[i].y + dy;
+        if(x <= 0 || x >= BOARD_WIDTH-1)
             return false;
-
-        if(dir == RIGHT && b.x == right &&
-           (b.x+1 == BOARD_WIDTH-1 || board[b.y][b.x+1].symbol != ' '))
-            return false;
-
-        if(dir == DOWN && b.y == bottom &&
-           (b.y+1 == BOARD_HEIGHT-1 || board[b.y+1][b.x].symbol != ' '))
+        if(y >= BOARD_HEIGHT-1)
             return false;
     }
-
     return true;
 }
 
 // move every brick in a block in a certain direction
 void move_block(tetronimo* block, direction dir) {
-    if(!can_move(block, dir) || dir == NONE) return;
 
-    for(int i = 0; i < block->brick_count; i++) {
-        if(dir == LEFT) block->bricks[i].x--;
-        if(dir == RIGHT) block->bricks[i].x++;
-        if(dir == DOWN) block->bricks[i].y++;
+    if(dir == ROTATE) {
+        if(!can_rotate(block)) return;
+        block->rotation = (block->rotation+1) % 4;
+        update_bricks(block);
+        return;
     }
+    int dx = 0, dy = 0;
+    switch(dir) {
+        case LEFT:
+            dx = -1;
+            break;
+        case RIGHT:
+            dx = 1;
+            break;
+        case DOWN:
+            dy = 1;
+            break;
+        default:
+            break;
+    }
+    if(!can_move(block, dx, dy)) return;
+    switch(dir) {
+        case LEFT:
+            block->x--;
+            break;
+        case RIGHT:
+            block->x++;
+            break;
+        case DOWN:
+            block->y++;
+            break;
+        default:
+            break;
+    }
+
+    update_bricks(block);
+   
 }
 
 
@@ -407,15 +507,16 @@ void* process_input() {
     while(alive) {
         memset(input, 0, sizeof(input));
         direction input_dir = NONE;
-
+        
         size_t bytes_read = read(0, &input, sizeof(input));
-
+        
         // wasd
         if(bytes_read == 1) {
             char c = input[0];
             if(c=='a'||c=='A') input_dir = LEFT;
             if(c=='d'||c=='D') input_dir = RIGHT;
             if(c=='s'||c=='S') input_dir = DOWN;
+            if(c=='r'||c=='R') input_dir = ROTATE;
         }
         // arrow keys
         else if(bytes_read == 3 && input[0]=='\033' && input[1]=='[') {
@@ -423,15 +524,16 @@ void* process_input() {
             if(input[2]=='C') input_dir = RIGHT;
             if(input[2]=='D') input_dir = LEFT;
         }
-
+        
         if(input_dir == NONE)
-            continue;
-
+        continue;
+        
         pthread_mutex_lock(&input_mutex);
-            move_block(current_block, input_dir);
+            move_block(CURRENT_BLOCK, input_dir);
         pthread_mutex_unlock(&input_mutex);
     }
     pthread_exit(NULL);
+    return NULL;
 }
 
 int main() {
@@ -440,7 +542,7 @@ int main() {
     srand(time(NULL));
 
     // install signal handler and change input mode
-    signal(SIGINT, cleanup);
+    signal(SIGINT, sig_int);
     enable_raw_input();
 
     // create separate input thread and run it
@@ -449,17 +551,19 @@ int main() {
 
     pthread_mutex_init(&input_mutex, NULL);
 
-    head = initialize_block(NULL);
+
+    setup();
 
     while(alive){
         RESET_SCREEN;
+
         initialize_board();
         
-        draw_blocks_to_board();
-        
-        draw_board();
-        
         pthread_mutex_lock(&input_mutex);
+            draw_blocks_to_board();
+        
+            draw_board();
+        
             iterate();
         pthread_mutex_unlock(&input_mutex);
 
@@ -467,5 +571,6 @@ int main() {
     }
 
     printf("You lost!");
+    cleanup();
     return 0;
 }
