@@ -9,4 +9,4 @@ $(TARGET): $(TARGET).c
 	$(CC) $(TARGET).c $(CFLAGS) -lpthread -o $(TARGET).out
 
 clean:
-	$(RM) $(TARGET)
+	$(RM) -rf $(TARGET) $(TARGET).out.dSYM
